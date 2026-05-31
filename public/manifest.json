@@ -1,0 +1,21 @@
+{
+  "name": "Lemon Traders App",
+  "short_name": "LemonApp",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#facc15",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icons/nkv-logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/nkv-logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

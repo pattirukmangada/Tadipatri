@@ -1,0 +1,123 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  
+  body {
+    @apply bg-cream text-forest font-sans;
+    font-feature-settings: 'kern' 1;
+  }
+
+  h1, h2, h3 {
+    @apply font-display;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-forest text-lemon font-semibold px-5 py-2.5 rounded-lg hover:bg-forest-light transition-colors duration-200 inline-flex items-center gap-2;
+  }
+  .btn-secondary {
+    @apply bg-lemon text-forest-dark font-semibold px-5 py-2.5 rounded-lg hover:bg-lemon-light transition-colors duration-200 inline-flex items-center gap-2;
+  }
+  .btn-danger {
+    @apply bg-red-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-red-700 transition-colors duration-200 inline-flex items-center gap-2;
+  }
+  .btn-ghost {
+    @apply bg-transparent border border-forest/30 text-forest font-medium px-4 py-2 rounded-lg hover:bg-forest/5 transition-colors duration-200 inline-flex items-center gap-2;
+  }
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-forest/10 p-5;
+  }
+  .input {
+    @apply w-full border border-forest/20 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-lemon focus:border-lemon bg-white transition-all;
+  }
+  .label {
+    @apply block text-sm font-medium text-forest/70 mb-1;
+  }
+  .stat-card {
+    @apply bg-white rounded-xl border border-forest/10 p-4 shadow-sm;
+  }
+}
+
+/* Sidebar */
+.sidebar-link {
+  @apply flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 text-white/70 hover:text-white hover:bg-white/10;
+}
+.sidebar-link.active {
+  @apply bg-lemon text-forest-dark font-semibold;
+}
+
+/* Print styles */
+@media print {
+  body { background: white !important; }
+  .no-print { display: none !important; }
+  .print-only { display: block !important; }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #f1f1f1; }
+::-webkit-scrollbar-thumb { background: #1a3a2a55; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #1a3a2a99; }
+
+/* Telugu font */
+.font-telugu { font-family: 'Noto Sans Telugu', sans-serif; }
+
+/* Thermal print */
+@media print {
+  @page { size: 80mm auto; margin: 0; }
+  .thermal-wrapper { width: 72mm !important; }
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fadeIn 0.3s ease both; }
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.animate-slide-in { animation: slideIn 0.25s ease both; }
+
+
+@keyframes gradientMove {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+.neon-gradient-text {
+  background: linear-gradient(
+    90deg,
+    #facc15,
+    #22c55e,
+    #3b82f6,
+    #a855f7,
+    #f43f5e,
+    #facc15
+  );
+  background-size: 200% auto;
+
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+
+  animation: gradientMove 3s linear infinite;
+
+  /* Glow Effect */
+  text-shadow:
+    0 0 5px rgba(250, 204, 21, 0.8),
+    0 0 10px rgba(34, 197, 94, 0.7),
+    0 0 20px rgba(59, 130, 246, 0.6),
+    0 0 30px rgba(168, 85, 247, 0.5);
+}

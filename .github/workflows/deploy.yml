@@ -1,0 +1,63 @@
+name: Deploy to Hostinger
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build React app
+        run: npm run build
+
+      - name: List dist folder
+        run: ls -la ./dist/
+
+      - name: Deploy dist (React) to Hostinger
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          port: 21
+          security: loose
+          local-dir: ./dist/
+          server-dir: /public_html/
+          dangerous-clean-slate: false
+          state-name: .ftp-deploy-sync-state-dist.json    # ← separate state
+          exclude: |
+            **/.git*
+            **/.git*/**
+
+      - name: Deploy backend (PHP) to Hostinger
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          port: 21
+          security: loose
+          local-dir: ./backend/
+          server-dir: /public_html/
+          dangerous-clean-slate: false
+          state-name: .ftp-deploy-sync-state-backend.json  # ← separate state
+          exclude: |
+            **/.git*
+            **/.git*/**
