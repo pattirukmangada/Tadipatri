@@ -111,6 +111,12 @@ try {
             handleLedger($method, $id ? (string)$id : null, $query);
         })(),
 
+        // ── Buyer Hamali (per-buyer flat deduction setting) ───────────────────
+        $resource === 'buyer-hamali' => (function() use ($method, $query) {
+            require_once __DIR__ . '/../controllers/BuyerLedgerController.php';
+            handleBuyerHamali($method, $query);
+        })(),
+
         // ── Buyer Payments ────────────────────────────────────────────────────
         $resource === 'buyer-payments' => (function() use ($method, $id, $query) {
             require_once __DIR__ . '/../controllers/BuyerLedgerController.php';

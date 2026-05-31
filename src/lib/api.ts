@@ -149,6 +149,9 @@ export interface BuyerBalanceResponse {
   found: boolean
 }
 
+// Map of buyer_name → hamali amount
+export type BuyerHamaliMap = Record<string, number>
+
 // ─── Core ───────────────────────────────────────────────────────────────────
 
 function getToken(): string | null {
@@ -269,6 +272,17 @@ export const api = {
   getContacts: () => request<Contact[]>('/contacts'),
   submitContact: (data: { name: string; email?: string; phone?: string; message: string }) =>
     request<{ success: boolean }>('/contacts', { method: 'POST', body: JSON.stringify(data) }),
+
+  // ── Buyer Hamali ────────────────────────────────────────────────────────
+  getBuyerHamaliMap: () =>
+    request<BuyerHamaliMap>('/buyer-hamali'),
+  getBuyerHamali: (buyer: string) =>
+    request<{ buyer_name: string; hamali: number }>(`/buyer-hamali?buyer=${encodeURIComponent(buyer)}`),
+  setBuyerHamali: (buyer_name: string, hamali: number) =>
+    request<{ buyer_name: string; hamali: number }>('/buyer-hamali', {
+      method: 'POST',
+      body: JSON.stringify({ buyer_name, hamali }),
+    }),
 
   // ── Buyer Payments ──────────────────────────────────────────────────────
   getBuyerPayments: (params: { buyer?: string; from?: string; to?: string }) => {

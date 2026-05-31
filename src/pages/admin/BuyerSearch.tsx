@@ -1,12 +1,11 @@
 // src/pages/admin/BuyerSearch.tsx
 
-import { useState, useEffect, useCallback } from 'react'
-import { api, formatCurrency } from '../../lib/api'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { api, BuyerHamaliMap, formatCurrency } from '../../lib/api'
 import { printBuyerThermal, PrintLang } from '../../lib/print-thermal'
 import { exportBuyerPDF } from '../../lib/pdf-buyer'
-import { Loader2, X, Printer } from 'lucide-react'
+import { Loader2, X, Printer, Save } from 'lucide-react'
 
-// ── Date helper: YYYY-MM-DD → DD-MM-YYYY ──────────────────────────────────
 function fmtDate(d?: string): string {
   if (!d) return ''
   const [y, m, day] = d.split('-')
@@ -20,17 +19,41 @@ export default function BuyerSearch() {
   const [from,  setFrom]  = useState(today)
   const [to,    setTo]    = useState(today)
 
-  // All raw rows returned by the list query (LIKE search)
   const [results,        setResults]        = useState<any[]>([])
-  // Details rows for one specific buyer (exact match)
   const [details,        setDetails]        = useState<any[]>([])
   const [selectedBuyer,  setSelectedBuyer]  = useState<string | null>(null)
   const [detailsLoading, setDetailsLoading] = useState(false)
+  const [loading,        setLoading]        = useState(true)
+  const [error,          setError]          = useState<string | null>(null)
 
-  const [loading, setLoading] = useState(true)
-  const [error,   setError]   = useState<string | null>(null)
+  // ── Hamali state ─────────────────────────────────────────────────────────
+  // Map of buyer_name → current hamali value (from DB)
+  const [hamaliMap,     setHamaliMap]     = useState<BuyerHamaliMap>({})
+  // Map of buyer_name → edited hamali value (local input before save)
+  const [hamaliEdits,   setHamaliEdits]   = useState<Record<string, string>>({})
+  // Map of buyer_name → saving state
+  const [hamaliSaving,  setHamaliSaving]  = useState<Record<string, boolean>>({})
+  // Map of buyer_name → saved flash
+  const [hamaliSaved,   setHamaliSaved]   = useState<Record<string, boolean>>({})
 
-  // ── LIST SEARCH (LIKE) ───────────────────────────────────────────────────
+  const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+
+  // Load hamali map once
+  const loadHamaliMap = useCallback(() => {
+    api.getBuyerHamaliMap()
+      .then(map => {
+        setHamaliMap(map)
+        // Initialise edit inputs from DB values (as string for input)
+        const edits: Record<string, string> = {}
+        for (const [name, val] of Object.entries(map)) {
+          edits[name] = val > 0 ? String(val) : ''
+        }
+        setHamaliEdits(prev => ({ ...edits, ...prev }))
+      })
+      .catch(() => {})
+  }, [])
+
+  // ── LIST SEARCH ───────────────────────────────────────────────────────────
   const search = useCallback(() => {
     setLoading(true)
     setError(null)
@@ -47,56 +70,79 @@ export default function BuyerSearch() {
   }, [buyer, from, to])
 
   useEffect(() => { search() }, [search])
+  useEffect(() => { loadHamaliMap() }, [loadHamaliMap])
 
-  // ── DETAILS (EXACT MATCH) ────────────────────────────────────────────────
+  // ── DETAILS ───────────────────────────────────────────────────────────────
   const loadDetails = (name: string) => {
-    if (selectedBuyer === name) {
-      setSelectedBuyer(null)
-      setDetails([])
-      return
-    }
-
+    if (selectedBuyer === name) { setSelectedBuyer(null); setDetails([]); return }
     setSelectedBuyer(name)
     setDetailsLoading(true)
     setDetails([])
-
     api.getBuyerDetails({ buyer: name, from, to, exact: '1' })
       .then((data: any[]) => setDetails(data))
       .catch(() => setDetails([]))
       .finally(() => setDetailsLoading(false))
   }
 
-  // ── AGGREGATE LIST ───────────────────────────────────────────────────────
-  const buyerMap: Record<string, { buyer_name: string; total_bags: number; total_amount: number }> = {}
+  // ── HAMALI INPUT HANDLER ──────────────────────────────────────────────────
+  // Initialise edit value for a buyer if not yet set
+  const getHamaliEdit = (name: string): string => {
+    if (name in hamaliEdits) return hamaliEdits[name]
+    const dbVal = hamaliMap[name] ?? 0
+    return dbVal > 0 ? String(dbVal) : ''
+  }
 
+  const handleHamaliChange = (buyerName: string, raw: string) => {
+    setHamaliEdits(prev => ({ ...prev, [buyerName]: raw }))
+  }
+
+  // Save hamali to DB (auto-save on blur, also manual save button)
+  const saveHamali = async (buyerName: string) => {
+    const raw    = hamaliEdits[buyerName] ?? ''
+    const hamali = parseFloat(raw) || 0
+
+    // No change? skip
+    if (hamali === (hamaliMap[buyerName] ?? 0)) return
+
+    setHamaliSaving(prev => ({ ...prev, [buyerName]: true }))
+    try {
+      await api.setBuyerHamali(buyerName, hamali)
+      setHamaliMap(prev => ({ ...prev, [buyerName]: hamali }))
+      // Show saved flash
+      setHamaliSaved(prev => ({ ...prev, [buyerName]: true }))
+      if (saveTimers.current[buyerName]) clearTimeout(saveTimers.current[buyerName])
+      saveTimers.current[buyerName] = setTimeout(() => {
+        setHamaliSaved(prev => ({ ...prev, [buyerName]: false }))
+      }, 2000)
+    } catch {
+      alert(`Failed to save hamali for ${buyerName}`)
+    } finally {
+      setHamaliSaving(false as any)
+      setHamaliSaving(prev => ({ ...prev, [buyerName]: false }))
+    }
+  }
+
+  // ── AGGREGATE ─────────────────────────────────────────────────────────────
+  const buyerMap: Record<string, { buyer_name: string; total_bags: number; total_amount: number }> = {}
   results.forEach((r: any) => {
     const key = r.buyer_name
-    if (!buyerMap[key]) {
-      buyerMap[key] = { buyer_name: key, total_bags: 0, total_amount: 0 }
-    }
+    if (!buyerMap[key]) buyerMap[key] = { buyer_name: key, total_bags: 0, total_amount: 0 }
     buyerMap[key].total_bags   += Number(r.bags   || 0)
     buyerMap[key].total_amount += Number(r.amount || 0)
   })
+  const groupedBuyers = Object.values(buyerMap).sort((a, b) => a.buyer_name.localeCompare(b.buyer_name))
+  const totalBags     = groupedBuyers.reduce((s, r) => s + r.total_bags,   0)
+  const totalAmount   = groupedBuyers.reduce((s, r) => s + r.total_amount, 0)
 
-  const groupedBuyers = Object.values(buyerMap).sort((a, b) =>
-    a.buyer_name.localeCompare(b.buyer_name)
-  )
-
-  const totalBags   = groupedBuyers.reduce((s, r) => s + r.total_bags,   0)
-  const totalAmount = groupedBuyers.reduce((s, r) => s + r.total_amount, 0)
-
-  // ── AGGREGATE DETAILS ────────────────────────────────────────────────────
   const groupedDetails: Record<string, any[]> = {}
   details.forEach((d: any) => {
-    const key = d.patti_name
-    if (!groupedDetails[key]) groupedDetails[key] = []
-    groupedDetails[key].push(d)
+    if (!groupedDetails[d.patti_name]) groupedDetails[d.patti_name] = []
+    groupedDetails[d.patti_name].push(d)
   })
-
   const detailsTotal = details.reduce((s, d) => s + Number(d.amount || 0), 0)
-  const detailsBags  = details.reduce((s, d) => s + Number(d.bags  || 0), 0)
+  const detailsBags  = details.reduce((s, d) => s + Number(d.bags   || 0), 0)
 
-  // ── PRINT HANDLER ────────────────────────────────────────────────────────
+  // ── PRINT ─────────────────────────────────────────────────────────────────
   const handlePrint = (lang: PrintLang) => {
     if (!selectedBuyer || details.length === 0) return
     printBuyerThermal(selectedBuyer, details, { from, to }, lang)
@@ -105,12 +151,12 @@ export default function BuyerSearch() {
   return (
     <div className="space-y-5">
 
-      {/* ── HEADER ─────────────────────────────────────────────────────── */}
+      {/* HEADER */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Buyer Search</h1>
       </div>
 
-      {/* ── FILTERS ─────────────────────────────────────────────────────── */}
+      {/* FILTERS */}
       <div className="card flex gap-3 flex-wrap items-end">
         <div className="flex-1 min-w-[160px]">
           <label className="block text-xs font-medium text-gray-600 mb-1">Buyer Name</label>
@@ -131,6 +177,13 @@ export default function BuyerSearch() {
         </div>
       </div>
 
+      {/* HAMALI INFO BANNER */}
+      <div className="card bg-amber-50 border border-amber-200 py-2.5 px-4 text-xs text-amber-800 flex items-center gap-2">
+        <span className="font-semibold">Hamali:</span>
+        Enter a flat hamali amount per buyer. This will be deducted from their patti total before updating the Buyer Ledger.
+        If no hamali is entered, the full patti amount goes to the ledger directly.
+      </div>
+
       {loading ? (
         <div className="flex justify-center py-10">
           <Loader2 className="animate-spin text-forest" size={28} />
@@ -139,7 +192,7 @@ export default function BuyerSearch() {
         <div className="card text-red-500 text-sm">{error}</div>
       ) : (
         <>
-          {/* ── BUYER LIST TABLE ───────────────────────────────────────── */}
+          {/* BUYER LIST TABLE */}
           <div className="card overflow-hidden p-0">
             <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-gray-700">
@@ -164,45 +217,109 @@ export default function BuyerSearch() {
                       <th className="py-3 px-4 text-left">Buyer</th>
                       <th className="py-3 px-4 text-right">Bags</th>
                       <th className="py-3 px-4 text-right">Amount</th>
+                      <th className="py-3 px-4 text-right min-w-[160px]">
+                        Hamali (Flat)
+                        <span className="ml-1 font-normal text-[10px] text-forest/60 normal-case">
+                          deducted from ledger
+                        </span>
+                      </th>
                       <th className="py-3 px-4 text-center">Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {groupedBuyers.map((r, i) => (
-                      <tr
-                        key={r.buyer_name}
-                        className={`border-t hover:bg-forest/[0.04] transition-colors ${
-                          selectedBuyer === r.buyer_name ? 'bg-forest/10' : ''
-                        }`}
-                      >
-                        <td className="py-3 px-4 text-gray-400">{i + 1}</td>
-                        <td className="py-3 px-4 font-semibold text-forest">{r.buyer_name}</td>
-                        <td className="py-3 px-4 text-right">{r.total_bags}</td>
-                        <td className="py-3 px-4 text-right text-green-700 font-medium">
-                          {formatCurrency(r.total_amount)}
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <button
-                            onClick={() => loadDetails(r.buyer_name)}
-                            className={`text-sm px-3 py-1 rounded-lg font-medium transition-colors ${
-                              selectedBuyer === r.buyer_name
-                                ? 'bg-red-50 text-red-500 hover:bg-red-100'
-                                : 'bg-forest/10 text-forest hover:bg-forest/20'
-                            }`}
-                          >
-                            {selectedBuyer === r.buyer_name ? 'Close' : 'View'}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {groupedBuyers.map((r, i) => {
+                      const editVal   = getHamaliEdit(r.buyer_name)
+                      const hamaliAmt = parseFloat(editVal) || 0
+                      const netAmt    = hamaliAmt > 0 ? r.total_amount - hamaliAmt : r.total_amount
+                      const isSaving  = hamaliSaving[r.buyer_name] ?? false
+                      const isSaved   = hamaliSaved[r.buyer_name]  ?? false
+
+                      return (
+                        <tr
+                          key={r.buyer_name}
+                          className={`border-t hover:bg-forest/[0.04] transition-colors ${
+                            selectedBuyer === r.buyer_name ? 'bg-forest/10' : ''
+                          }`}
+                        >
+                          <td className="py-3 px-4 text-gray-400">{i + 1}</td>
+                          <td className="py-3 px-4 font-semibold text-forest">
+                            {r.buyer_name}
+                          </td>
+                          <td className="py-3 px-4 text-right">{r.total_bags}</td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="font-medium text-green-700 tabular-nums">
+                              {formatCurrency(r.total_amount)}
+                            </div>
+                            {/* Show net after hamali deduction */}
+                            {hamaliAmt > 0 && (
+                              <div className="text-xs text-orange-600 tabular-nums mt-0.5">
+                                Net: {formatCurrency(netAmt)}
+                              </div>
+                            )}
+                          </td>
+
+                          {/* HAMALI INPUT */}
+                          <td className="py-3 px-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <div className="relative">
+                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs pointer-events-none">
+                                  ₹
+                                </span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  placeholder="0"
+                                  className={`input pl-5 w-28 text-right tabular-nums text-sm ${
+                                    hamaliAmt > 0 ? 'border-orange-300 bg-orange-50' : ''
+                                  }`}
+                                  value={editVal}
+                                  onChange={e => handleHamaliChange(r.buyer_name, e.target.value)}
+                                  onBlur={() => saveHamali(r.buyer_name)}
+                                  onKeyDown={e => { if (e.key === 'Enter') saveHamali(r.buyer_name) }}
+                                />
+                              </div>
+
+                              {/* Save button / status */}
+                              {isSaving ? (
+                                <Loader2 size={14} className="animate-spin text-gray-400 shrink-0" />
+                              ) : isSaved ? (
+                                <span className="text-green-600 text-xs font-medium shrink-0">✓</span>
+                              ) : (
+                                <button
+                                  onClick={() => saveHamali(r.buyer_name)}
+                                  title="Save hamali"
+                                  className="p-1 rounded hover:bg-forest/10 text-forest/50 hover:text-forest transition-colors shrink-0"
+                                >
+                                  <Save size={13} />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-4 text-center">
+                            <button
+                              onClick={() => loadDetails(r.buyer_name)}
+                              className={`text-sm px-3 py-1 rounded-lg font-medium transition-colors ${
+                                selectedBuyer === r.buyer_name
+                                  ? 'bg-red-50 text-red-500 hover:bg-red-100'
+                                  : 'bg-forest/10 text-forest hover:bg-forest/20'
+                              }`}
+                            >
+                              {selectedBuyer === r.buyer_name ? 'Close' : 'View'}
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                   <tfoot>
                     <tr className="border-t-2 bg-forest/10 font-bold">
                       <td className="py-3 px-4 text-gray-700" colSpan={2}>Total</td>
                       <td className="py-3 px-4 text-right">{totalBags}</td>
-                      <td className="py-3 px-4 text-right text-green-800">
+                      <td className="py-3 px-4 text-right text-green-800 tabular-nums">
                         {formatCurrency(totalAmount)}
                       </td>
+                      <td />
                       <td />
                     </tr>
                   </tfoot>
@@ -211,11 +328,9 @@ export default function BuyerSearch() {
             )}
           </div>
 
-          {/* ── BUYER DETAILS ────────────────────────────────────────────── */}
+          {/* BUYER DETAILS */}
           {selectedBuyer && (
             <div className="card space-y-4">
-
-              {/* Header */}
               <div className="flex justify-between items-start flex-wrap gap-2">
                 <div>
                   <h2 className="text-lg font-bold text-forest">{selectedBuyer}</h2>
@@ -232,49 +347,30 @@ export default function BuyerSearch() {
                 <div className="flex items-center gap-2 flex-wrap">
                   {details.length > 0 && (
                     <>
-                      {/* ── SPLIT PRINT BUTTON: EN / తె ─────────────────── */}
                       <div className="flex items-stretch rounded-lg overflow-hidden border border-forest/30 text-sm font-medium">
-                        {/* Label */}
                         <span className="flex items-center gap-1 px-2 py-1 bg-forest/5 text-forest text-xs border-r border-forest/20 select-none">
-                          <Printer size={13} />
-                          Print
+                          <Printer size={13} /> Print
                         </span>
-                        {/* English */}
                         <button
                           onClick={() => handlePrint('en')}
-                          title="Print in English"
                           className="px-3 py-1 bg-forest text-white hover:bg-forest/90 transition-colors border-r border-forest/60"
-                        >
-                          EN
-                        </button>
-                        {/* Telugu */}
+                        >EN</button>
                         <button
                           onClick={() => handlePrint('te')}
-                          title="తెలుగులో ప్రింట్ చేయండి"
                           className="px-3 py-1 bg-forest text-white hover:bg-forest/90 transition-colors"
                           style={{ fontFamily: "'Noto Sans Telugu', sans-serif" }}
-                        >
-                          తె
-                        </button>
+                        >తె</button>
                       </div>
-
-                      {/* PDF button */}
                       <button
                         onClick={() => exportBuyerPDF(selectedBuyer, details, from, to)}
                         className="btn-secondary text-sm"
-                      >
-                        PDF
-                      </button>
+                      >PDF</button>
                     </>
                   )}
-
                   <button
                     onClick={() => { setSelectedBuyer(null); setDetails([]) }}
                     className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"
-                    title="Close"
-                  >
-                    <X size={16} />
-                  </button>
+                  ><X size={16} /></button>
                 </div>
               </div>
 
@@ -288,20 +384,15 @@ export default function BuyerSearch() {
                 </div>
               ) : (
                 <>
-                  {/* Grouped by patti */}
                   {Object.entries(groupedDetails).map(([patti, items]) => {
                     const pattiTotal = items.reduce((s, i) => s + Number(i.amount || 0), 0)
                     const pattiBags  = items.reduce((s, i) => s + Number(i.bags  || 0), 0)
-
                     return (
                       <div key={patti} className="border border-gray-200 rounded-lg overflow-hidden">
-                        {/* Patti header */}
                         <div className="bg-forest/5 px-4 py-2 flex items-center justify-between">
                           <span className="font-semibold text-forest text-sm">Patti: {patti}</span>
                           <span className="text-xs text-gray-500">{pattiBags} bags</span>
                         </div>
-
-                        {/* Items table */}
                         <table className="w-full text-sm">
                           <thead className="text-xs text-gray-400 border-b">
                             <tr>
@@ -315,9 +406,7 @@ export default function BuyerSearch() {
                           <tbody className="divide-y divide-gray-100">
                             {items.map((d: any, i: number) => (
                               <tr key={i} className="hover:bg-gray-50">
-                                <td className="px-4 py-2 text-gray-500 whitespace-nowrap">
-                                  {fmtDate(d.date)}
-                                </td>
+                                <td className="px-4 py-2 text-gray-500 whitespace-nowrap">{fmtDate(d.date)}</td>
                                 <td className="px-4 py-2">{d.item_name}</td>
                                 <td className="px-4 py-2 text-right">{d.bags}</td>
                                 <td className="px-4 py-2 text-right">₹{d.rate}</td>
@@ -329,9 +418,7 @@ export default function BuyerSearch() {
                           </tbody>
                           <tfoot className="border-t bg-gray-50">
                             <tr>
-                              <td colSpan={2} className="px-4 py-2 font-semibold text-sm">
-                                Subtotal
-                              </td>
+                              <td colSpan={2} className="px-4 py-2 font-semibold text-sm">Subtotal</td>
                               <td className="px-4 py-2 text-right font-semibold">{pattiBags}</td>
                               <td />
                               <td className="px-4 py-2 text-right font-semibold text-green-700">
@@ -344,7 +431,6 @@ export default function BuyerSearch() {
                     )
                   })}
 
-                  {/* Grand total */}
                   <div className="pt-2 border-t-2 border-gray-200 flex justify-between items-center font-bold text-base">
                     <span className="text-gray-700">
                       Grand Total &nbsp;
