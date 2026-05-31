@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { api, Bill, formatCurrency, formatDate } from '../../lib/api'
+import { api, Bill, BuyerBalanceResponse, formatCurrency, formatDate } from '../../lib/api'
 import logo from '../../assets/nkv-logo.png'
 import logoheader from '../../assets/nkv logo.png'
 
@@ -40,6 +40,7 @@ export default function BillPrint() {
   const [bill, setBill] = useState<Bill | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [buyerBalance, setBuyerBalance] = useState<BuyerBalanceResponse | null>(null)
 
   useEffect(() => {
     const billId = Number(id)
@@ -55,8 +56,18 @@ export default function BillPrint() {
     setError('')
 
     api.getBill(billId)
-      .then((data) => {
+      .then(async (data) => {
         setBill(data)
+        // Load buyer balance for the first buyer in the bill items
+        const firstBuyer = data.items?.[0]?.buyer_name?.trim()
+        if (firstBuyer) {
+          try {
+            const balance = await api.getBuyerBalance(firstBuyer, billId)
+            setBuyerBalance(balance)
+          } catch {
+            setBuyerBalance(null)
+          }
+        }
       })
       .catch((err: unknown) => {
         setBill(null)
@@ -237,6 +248,36 @@ export default function BillPrint() {
           </div>
 
         </div>
+
+        {/* ───── BUYER BALANCE ───── */}
+        {buyerBalance && buyerBalance.found && (
+          <>
+            <div className="border-b-[2px] border-black mb-1 mt-2"></div>
+            <div className="text-center font-bold text-[11px] mb-1">
+              {lang === 'te' ? 'బ్యాలెన్స్ వివరాలు' : 'BALANCE DETAILS'}
+            </div>
+            <div className="border p-2 text-[11px] font-semibold space-y-1">
+              <div className="flex justify-between">
+                <span>{lang === 'te' ? 'మునుపటి బ్యాలెన్స్' : 'Previous Balance'}</span>
+                <span className="tabular-nums">
+                  {formatCurrency(buyerBalance.prev_balance)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>{lang === 'te' ? 'నేటి పట్టి మొత్తం' : "Today's Patti Amount"}</span>
+                <span className="tabular-nums">
+                  {formatCurrency(buyerBalance.patti_amount)}
+                </span>
+              </div>
+              <div className="border-t border-dashed border-gray-400 pt-1 flex justify-between font-bold text-[12px]">
+                <span>{lang === 'te' ? 'ప్రస్తుత బ్యాలెన్స్' : 'Current Balance'}</span>
+                <span className="tabular-nums">
+                  {formatCurrency(buyerBalance.current_balance)}
+                </span>
+              </div>
+            </div>
+          </>
+        )}
 
         {/* FOOTER */}
           <div className="text-center text-[11px] mt-4 pt-2 border-b-[2px] border-black text-gray-900">

@@ -139,13 +139,14 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import {
   LayoutDashboard, FileText, Users, Mail, Settings,
-  LogOut, Menu, ChevronRight, TrendingUp, Package, CalendarRange, BookOpen
+  LogOut, Menu, ChevronRight, TrendingUp, Package, CalendarRange, BookOpen, Wallet
 } from 'lucide-react'
 
 const navItems = [
   { to: '/admin',               label: 'Dashboard',          icon: LayoutDashboard, end: true,  color: '#f59e0b', bg: 'rgba(245,158,11,0.15)'  },
   { to: '/admin/bills',         label: 'Bills',              icon: FileText,        color: '#34d399', bg: 'rgba(52,211,153,0.15)'  },
   { to: '/admin/buyers',        label: 'Buyers Bills',       icon: Users,           color: '#60a5fa', bg: 'rgba(96,165,250,0.15)'  },
+  { to: '/admin/buyer-ledger',  label: 'Buyer Ledger',       icon: Wallet,          color: '#f97316', bg: 'rgba(249,115,22,0.15)'  },
   { to: '/admin/patti-report',  label: 'Farmer Statements',  icon: CalendarRange,   color: '#f472b6', bg: 'rgba(244,114,182,0.15)' },
   { to: '/admin/serial-print',  label: 'Serial Print',       icon: Package,         color: '#a78bfa', bg: 'rgba(167,139,250,0.15)' },
   { to: '/admin/profit-loss',   label: 'Profit & Loss',      icon: TrendingUp,      color: '#fb923c', bg: 'rgba(251,146,60,0.15)'  },

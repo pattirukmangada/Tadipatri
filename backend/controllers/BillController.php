@@ -2,6 +2,7 @@
 // backend/controllers/BillController.php
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../middleware/AuthMiddleware.php';
+require_once __DIR__ . '/BuyerLedgerController.php';
 
 function calcCommission(float $totalAmount, float $commissionRate): float {
     return floor(($totalAmount * $commissionRate) / 1000);
@@ -114,6 +115,9 @@ function handleBills(string $method, ?string $id, array $query): void {
             }
 
             $db->commit();
+
+            // Sync buyer ledger (after commit so items are readable)
+            syncBuyerLedgerFromBill($db, (int)$billId, 'create');
         } catch (Throwable $e) {
             if ($db->inTransaction()) $db->rollBack();
             throw $e;
@@ -191,6 +195,9 @@ function handleBills(string $method, ?string $id, array $query): void {
             }
 
             $db->commit();
+
+            // Sync buyer ledger (after commit)
+            syncBuyerLedgerFromBill($db, (int)$id, 'update');
         } catch (Throwable $e) {
             if ($db->inTransaction()) $db->rollBack();
             throw $e;
@@ -206,6 +213,8 @@ function handleBills(string $method, ?string $id, array $query): void {
     }
 
     if ($method === 'DELETE' && $id) {
+        // Remove buyer ledger debit entries first
+        syncBuyerLedgerFromBill($db, (int)$id, 'delete');
         $db->prepare('DELETE FROM bills WHERE id = ?')->execute([$id]);
         echo json_encode(['success' => true]);
         return;

@@ -111,6 +111,24 @@ try {
             handleLedger($method, $id ? (string)$id : null, $query);
         })(),
 
+        // ── Buyer Payments ────────────────────────────────────────────────────
+        $resource === 'buyer-payments' => (function() use ($method, $id, $query) {
+            require_once __DIR__ . '/../controllers/BuyerLedgerController.php';
+            handleBuyerPayments($method, $id ? (string)$id : null, $query);
+        })(),
+
+        // ── Buyer Ledger ──────────────────────────────────────────────────────
+        $resource === 'buyer-ledger' => (function() use ($method, $id, $query) {
+            require_once __DIR__ . '/../controllers/BuyerLedgerController.php';
+            handleBuyerLedger($method, $id ? (string)$id : null, $query);
+        })(),
+
+        // ── Buyer Balance (for print) ─────────────────────────────────────────
+        $resource === 'buyer-balance' => (function() use ($query) {
+            require_once __DIR__ . '/../controllers/BuyerLedgerController.php';
+            handleBuyerBalance($query);
+        })(),
+
         default => (function() use ($uri) {
             http_response_code(404);
             echo json_encode(['error' => "Route not found: $uri"]);

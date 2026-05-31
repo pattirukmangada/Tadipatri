@@ -110,6 +110,45 @@ export interface ChangePasswordResponse {
   message: string
 }
 
+export interface BuyerPayment {
+  id: number
+  buyer_name: string
+  date: string
+  credit_amount: number
+  hamali: number
+  description: string
+  created_at?: string
+}
+
+export interface BuyerLedgerEntry {
+  id: number
+  buyer_name: string
+  date: string
+  description: string
+  type: 'debit' | 'credit'
+  amount: number
+  ref_type: 'patti' | 'payment'
+  ref_id: number
+  running_balance?: number
+  created_at?: string
+}
+
+export interface BuyerLedgerResponse {
+  entries: BuyerLedgerEntry[]
+  total_debit: number
+  total_credit: number
+  balance: number
+  prev_balance: number
+  buyers: string[]
+}
+
+export interface BuyerBalanceResponse {
+  prev_balance: number
+  patti_amount: number
+  current_balance: number
+  found: boolean
+}
+
 // ─── Core ───────────────────────────────────────────────────────────────────
 
 function getToken(): string | null {
@@ -230,6 +269,32 @@ export const api = {
   getContacts: () => request<Contact[]>('/contacts'),
   submitContact: (data: { name: string; email?: string; phone?: string; message: string }) =>
     request<{ success: boolean }>('/contacts', { method: 'POST', body: JSON.stringify(data) }),
+
+  // ── Buyer Payments ──────────────────────────────────────────────────────
+  getBuyerPayments: (params: { buyer?: string; from?: string; to?: string }) => {
+    const q = new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([, v]) => v)) as Record<string, string>
+    ).toString()
+    return request<BuyerPayment[]>(`/buyer-payments${q ? `?${q}` : ''}`)
+  },
+  createBuyerPayment: (data: Partial<BuyerPayment>) =>
+    request<BuyerPayment>('/buyer-payments', { method: 'POST', body: JSON.stringify(data) }),
+  updateBuyerPayment: (id: number, data: Partial<BuyerPayment>) =>
+    request<BuyerPayment>(`/buyer-payments/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteBuyerPayment: (id: number) =>
+    request<{ success: boolean }>(`/buyer-payments/${id}`, { method: 'DELETE' }),
+
+  // ── Buyer Ledger ────────────────────────────────────────────────────────
+  getBuyerLedger: (params: { buyer?: string; from?: string; to?: string }) => {
+    const q = new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([, v]) => v)) as Record<string, string>
+    ).toString()
+    return request<BuyerLedgerResponse>(`/buyer-ledger${q ? `?${q}` : ''}`)
+  },
+
+  // ── Buyer Balance (for print) ───────────────────────────────────────────
+  getBuyerBalance: (buyer: string, billId: number) =>
+    request<BuyerBalanceResponse>(`/buyer-balance?buyer=${encodeURIComponent(buyer)}&bill_id=${billId}`),
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

@@ -24,6 +24,7 @@ import SerialPrint from './pages/admin/SerialPrint'
 import ContactMessages from './pages/admin/ContactMessages'
 import SettingsPage from './pages/admin/SettingsPage'
 import GeneralLedger from './pages/admin/GeneralLedger'
+import BuyerLedger from './pages/admin/BuyerLedger'
 
 export default function App() {
   return (
@@ -53,6 +54,7 @@ export default function App() {
           <Route path="serial-print" element={<SerialPrint />} />
           <Route path="profit-loss" element={<ProfitLoss />} />
           <Route path="ledger" element={<GeneralLedger />} />
+          <Route path="buyer-ledger" element={<BuyerLedger />} />
           <Route path="contacts" element={<ContactMessages />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
