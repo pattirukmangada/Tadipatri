@@ -178,11 +178,11 @@ export default function BuyerSearch() {
       </div>
 
       {/* HAMALI INFO BANNER */}
-      {/* <div className="card bg-amber-50 border border-amber-200 py-2.5 px-4 text-xs text-amber-800 flex items-center gap-2">
+      <div className="card bg-amber-50 border border-amber-200 py-2.5 px-4 text-xs text-amber-800 flex items-center gap-2">
         <span className="font-semibold">Hamali:</span>
-        Enter a flat hamali amount per buyer. This will be deducted from their patti total before updating the Buyer Ledger.
-        If no hamali is entered, the full patti amount goes to the ledger directly.
-      </div> */}
+        Enter a flat hamali amount per buyer. Hamali is ADDED to the buyer's gross amount to get the Net Amount.
+        Ledger debit = (Gross × 0.97) + Hamali. If no hamali, ledger debit = Gross × 0.97.
+      </div>
 
       {loading ? (
         <div className="flex justify-center py-10">
@@ -216,11 +216,12 @@ export default function BuyerSearch() {
                       <th className="py-3 px-4 text-left">#</th>
                       <th className="py-3 px-4 text-left">Buyer</th>
                       <th className="py-3 px-4 text-right">Bags</th>
-                      <th className="py-3 px-4 text-right">Amount</th>
+                      <th className="py-3 px-4 text-right">Gross Amount</th>
+                      <th className="py-3 px-4 text-right">Net Amount</th>
                       <th className="py-3 px-4 text-right min-w-[160px]">
                         Hamali (Flat)
                         <span className="ml-1 font-normal text-[10px] text-forest/60 normal-case">
-                          deducted from ledger
+                          added to net amount
                         </span>
                       </th>
                       <th className="py-3 px-4 text-center">Action</th>
@@ -230,7 +231,7 @@ export default function BuyerSearch() {
                     {groupedBuyers.map((r, i) => {
                       const editVal   = getHamaliEdit(r.buyer_name)
                       const hamaliAmt = parseFloat(editVal) || 0
-                      const netAmt    = hamaliAmt > 0 ? r.total_amount - hamaliAmt : r.total_amount
+                      const netAmt    = r.total_amount + hamaliAmt   // gross + hamali = net
                       const isSaving  = hamaliSaving[r.buyer_name] ?? false
                       const isSaved   = hamaliSaved[r.buyer_name]  ?? false
 
@@ -246,15 +247,21 @@ export default function BuyerSearch() {
                             {r.buyer_name}
                           </td>
                           <td className="py-3 px-4 text-right">{r.total_bags}</td>
-                          <td className="py-3 px-4 text-right">
-                            <div className="font-medium text-green-700 tabular-nums">
-                              {formatCurrency(r.total_amount)}
-                            </div>
-                            {/* Show net after hamali deduction */}
-                            {hamaliAmt > 0 && (
-                              <div className="text-xs text-orange-600 tabular-nums mt-0.5">
-                                Net: {formatCurrency(netAmt)}
+                          {/* Gross Amount */}
+                          <td className="py-3 px-4 text-right font-medium text-green-700 tabular-nums">
+                            {formatCurrency(r.total_amount)}
+                          </td>
+                          {/* Net Amount = gross + hamali */}
+                          <td className="py-3 px-4 text-right tabular-nums">
+                            {hamaliAmt > 0 ? (
+                              <div>
+                                <div className="font-bold text-blue-700">{formatCurrency(netAmt)}</div>
+                                <div className="text-[10px] text-gray-400 mt-0.5">
+                                  {formatCurrency(r.total_amount)} + {formatCurrency(hamaliAmt)}
+                                </div>
                               </div>
+                            ) : (
+                              <span className="text-gray-400 text-xs">—</span>
                             )}
                           </td>
 
@@ -319,6 +326,7 @@ export default function BuyerSearch() {
                       <td className="py-3 px-4 text-right text-green-800 tabular-nums">
                         {formatCurrency(totalAmount)}
                       </td>
+                      <td />
                       <td />
                       <td />
                     </tr>
