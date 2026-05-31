@@ -114,8 +114,8 @@ export interface BuyerPayment {
   id: number
   buyer_name: string
   date: string
-  credit_amount: number
-  hamali: number
+  entry_type: 'credit' | 'debit'
+  amount: number
   description: string
   created_at?: string
 }
