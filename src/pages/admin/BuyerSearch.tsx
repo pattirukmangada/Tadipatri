@@ -178,11 +178,11 @@ export default function BuyerSearch() {
       </div>
 
       {/* HAMALI INFO BANNER */}
-      <div className="card bg-amber-50 border border-amber-200 py-2.5 px-4 text-xs text-amber-800 flex items-center gap-2">
+      {/* <div className="card bg-amber-50 border border-amber-200 py-2.5 px-4 text-xs text-amber-800 flex items-center gap-2">
         <span className="font-semibold">Hamali:</span>
         Enter a flat hamali amount per buyer. This will be deducted from their patti total before updating the Buyer Ledger.
         If no hamali is entered, the full patti amount goes to the ledger directly.
-      </div>
+      </div> */}
 
       {loading ? (
         <div className="flex justify-center py-10">
