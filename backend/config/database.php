@@ -2,9 +2,9 @@
 // backend/config/database.php
 // ✏️ UPDATE THESE VALUES before deploying to Hostinger
 define('DB_HOST', '');
-define('DB_NAME', 'u964224255_Nkvlemons');
-define('DB_USER', 'u964224255_Nkvlemons');
-define('DB_PASS', 'Nkvlemons@786');
+define('DB_NAME', 'u964224255_Rukman');
+define('DB_USER', 'u964224255_Rukman');
+define('DB_PASS', 'Rukman@786');
 define('DB_CHARSET', 'utf8mb4');
 
 function getDB(): PDO {

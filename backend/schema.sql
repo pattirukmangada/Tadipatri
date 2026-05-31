@@ -27,7 +27,7 @@ CREATE TABLE `users` (
 
 -- Default admin user: admin / admin123
 INSERT INTO `users` (`username`, `password`) VALUES
-('admin', '$2y$10$t0Gi2EXloKp3NUNj2HMij.MooAVj3LKjA8m1j3UB//.4o1lyI9LPC');
+('Rukman', '$2y$10$/kivBhYRgN2H7kbj.i6ntO13mqyvR0tzAtZzWii.l0Rb1yEN391Wy');
 
 -- --------------------------------------------------------
 -- Table: bills
