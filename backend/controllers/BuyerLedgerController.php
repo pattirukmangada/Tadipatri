@@ -362,15 +362,106 @@ function upsertBuyerLedgerEntry(PDO $db, array $data): void {
 }
 
 // ============================================================
+// BUYER HAMALI  (/buyer-hamali)
+// Stores a flat hamali amount per buyer (one row per buyer).
+// GET  /buyer-hamali           → list all { buyer_name, hamali }
+// GET  /buyer-hamali?buyer=X   → single buyer hamali
+// POST /buyer-hamali           → upsert { buyer_name, hamali }
+// ============================================================
+
+function handleBuyerHamali(string $method, array $query): void {
+    requireAuth();
+    $db = getDB();
+
+    if ($method === 'GET') {
+        $buyer = trim($query['buyer'] ?? '');
+        if ($buyer !== '') {
+            $stmt = $db->prepare("
+                SELECT buyer_name, COALESCE(hamali, 0) as hamali
+                FROM buyer_hamali
+                WHERE buyer_name COLLATE utf8mb4_unicode_ci = ?
+            ");
+            $stmt->execute([$buyer]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            echo json_encode($row ?: ['buyer_name' => $buyer, 'hamali' => 0]);
+        } else {
+            // Return all buyer hamali as a map { buyer_name: hamali }
+            $stmt = $db->query("SELECT buyer_name, hamali FROM buyer_hamali ORDER BY buyer_name ASC");
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $map  = [];
+            foreach ($rows as $r) {
+                $map[$r['buyer_name']] = (float)$r['hamali'];
+            }
+            echo json_encode($map);
+        }
+        return;
+    }
+
+    if ($method === 'POST') {
+        $body      = json_decode(file_get_contents('php://input'), true);
+        $buyerName = trim($body['buyer_name'] ?? '');
+        $hamali    = (float)($body['hamali']    ?? 0);
+
+        if ($buyerName === '') {
+            http_response_code(400);
+            echo json_encode(['error' => 'buyer_name is required']);
+            return;
+        }
+
+        try {
+            $db->beginTransaction();
+
+            // 1. Save/update hamali for this buyer
+            $stmt = $db->prepare("
+                INSERT INTO buyer_hamali (buyer_name, hamali)
+                VALUES (?, ?)
+                ON DUPLICATE KEY UPDATE hamali = VALUES(hamali)
+            ");
+            $stmt->execute([$buyerName, $hamali]);
+
+            // 2. Re-sync ALL existing bills that contain this buyer
+            //    so buyer_ledger debit entries reflect updated hamali immediately
+            $billsStmt = $db->prepare("
+                SELECT DISTINCT b.id
+                FROM bills b
+                INNER JOIN bill_items bi ON bi.bill_id = b.id
+                WHERE bi.buyer_name COLLATE utf8mb4_unicode_ci = ?
+                ORDER BY b.id ASC
+            ");
+            $billsStmt->execute([$buyerName]);
+            $billIds = $billsStmt->fetchAll(PDO::FETCH_COLUMN);
+
+            foreach ($billIds as $billId) {
+                syncBuyerLedgerFromBill($db, (int)$billId, 'update');
+            }
+
+            $db->commit();
+        } catch (Throwable $e) {
+            if ($db->inTransaction()) $db->rollBack();
+            throw $e;
+        }
+
+        echo json_encode([
+            'buyer_name'   => $buyerName,
+            'hamali'       => $hamali,
+            'bills_synced' => count($billIds ?? []),
+        ]);
+        return;
+    }
+
+    http_response_code(405);
+    echo json_encode(['error' => 'Method not allowed']);
+}
+
+// ============================================================
 // CALLED FROM BillController on CREATE / UPDATE / DELETE
 //
 // Patti → Buyer Ledger Debit formula:
-//   gross        = bags × rate   (per buyer item)
-//   after_hamali = gross - hamali (hamali stored in buyer_payments for this buyer on same date)
-//   final        = after_hamali × 0.97   (3% discount removed)
+//   gross        = bags × rate   (per buyer item, summed)
+//   hamali       = buyer_hamali.hamali for this buyer (flat, from BuyerSearch page)
+//   if hamali > 0:  final = gross - hamali
+//   if hamali = 0:  final = gross  (direct, no deduction)
 //   → buyer_ledger debit = final
-//
-// Hamali lookup: buyer_payments.hamali for this buyer_name + bill date
 // ============================================================
 
 function syncBuyerLedgerFromBill(PDO $db, int $billId, string $action): void {
@@ -391,7 +482,7 @@ function syncBuyerLedgerFromBill(PDO $db, int $billId, string $action): void {
     // Remove old ledger entries for this bill
     $db->prepare("DELETE FROM buyer_ledger WHERE ref_type='patti' AND ref_id=?")->execute([$billId]);
 
-    // Group items by buyer_name → gross amount
+    // Sum gross amount per buyer
     $byBuyer = [];
     foreach ($items as $item) {
         $buyerName = trim($item['buyer_name']);
@@ -403,38 +494,41 @@ function syncBuyerLedgerFromBill(PDO $db, int $billId, string $action): void {
     if (empty($byBuyer)) return;
 
     $description = 'Patti No ' . $bill['serial_number'];
-    $billDate    = $bill['date'];
 
     $insertStmt = $db->prepare('
         INSERT INTO buyer_ledger (buyer_name, date, description, type, amount, ref_type, ref_id)
         VALUES (?, ?, ?, ?, ?, ?, ?)
     ');
 
-    // Fetch hamali for each buyer on this bill's date from buyer_payments
+    // Hamali lookup from buyer_hamali table (set on BuyerSearch page)
     $hamaliStmt = $db->prepare("
-        SELECT SUM(hamali) as total_hamali
-        FROM buyer_payments
+        SELECT COALESCE(hamali, 0) as hamali
+        FROM buyer_hamali
         WHERE buyer_name COLLATE utf8mb4_unicode_ci = ?
-          AND date = ?
     ");
 
     foreach ($byBuyer as $buyerName => $gross) {
         if ($gross <= 0) continue;
 
-        // Get hamali for this buyer on this bill date
-        $hamaliStmt->execute([$buyerName, $billDate]);
-        $hamaliRow    = $hamaliStmt->fetch(PDO::FETCH_ASSOC);
-        $hamali       = (float)($hamaliRow['total_hamali'] ?? 0);
+        // Get flat hamali for this buyer
+        $hamaliStmt->execute([$buyerName]);
+        $hamaliRow  = $hamaliStmt->fetch(PDO::FETCH_ASSOC);
+        $hamali     = (float)($hamaliRow['hamali'] ?? 0);
 
-        // Formula: (gross - hamali) × 0.97
-        $afterHamali  = max(0, $gross - $hamali);
-        $finalAmount  = round($afterHamali * 0.97, 2);
+        // Formula:
+        //   No hamali → gross goes directly to ledger
+        //   With hamali → gross - hamali
+        if ($hamali > 0) {
+            $finalAmount = round(max(0, $gross - $hamali), 2);
+        } else {
+            $finalAmount = round($gross, 2);
+        }
 
         if ($finalAmount <= 0) continue;
 
         $insertStmt->execute([
             $buyerName,
-            $billDate,
+            $bill['date'],
             $description,
             'debit',
             $finalAmount,

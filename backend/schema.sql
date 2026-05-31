@@ -156,6 +156,18 @@ ALTER TABLE bills
   ADD COLUMN is_printed TINYINT(1) NOT NULL DEFAULT 0 AFTER is_paid;
 
 
+-- Step 1: Add new columns
+ALTER TABLE buyer_payments
+  ADD COLUMN entry_type ENUM('credit','debit') NOT NULL DEFAULT 'credit' AFTER date,
+  ADD COLUMN amount DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER entry_type;
+
+-- Step 2: Copy existing credit_amount data into new amount column
+UPDATE buyer_payments SET amount = credit_amount WHERE 1;
+
+-- Step 3: Verify it looks correct (optional check)
+SELECT id, buyer_name, date, entry_type, amount, credit_amount FROM buyer_payments LIMIT 10;
+
+
 <?php
 $password = "admin123";
 
