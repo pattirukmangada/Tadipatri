@@ -515,8 +515,9 @@ function syncBuyerLedgerFromBill(PDO $db, int $billId, string $action): void {
         $hamaliRow  = $hamaliStmt->fetch(PDO::FETCH_ASSOC);
         $hamali     = (float)($hamaliRow['hamali'] ?? 0);
 
-        // Formula: final = (gross x 0.97) + hamali
-        $finalAmount = round(($gross * 0.97) + $hamali, 2);
+        // Formula: each patti debit = gross x 0.97 only
+        // Hamali is a flat amount shown in BuyerSearch total, NOT added per patti
+        $finalAmount = round($gross * 0.97, 2);
 
         if ($finalAmount <= 0) continue;
 

@@ -180,8 +180,8 @@ export default function BuyerSearch() {
       {/* HAMALI INFO BANNER */}
       <div className="card bg-amber-50 border border-amber-200 py-2.5 px-4 text-xs text-amber-800 flex items-center gap-2">
         <span className="font-semibold">Hamali:</span>
-        Enter a flat hamali amount per buyer. Hamali is ADDED to the buyer's gross amount to get the Net Amount.
-        Ledger debit = (Gross × 0.97) + Hamali. If no hamali, ledger debit = Gross × 0.97.
+        Enter a flat hamali amount per buyer. This is deducted from their gross total to show Net Amount here.
+        Each patti debit in Buyer Ledger = Gross × 0.97 (3% discount). Hamali is shown as a flat deduction in total.
       </div>
 
       {loading ? (
@@ -221,7 +221,7 @@ export default function BuyerSearch() {
                       <th className="py-3 px-4 text-right min-w-[160px]">
                         Hamali (Flat)
                         <span className="ml-1 font-normal text-[10px] text-forest/60 normal-case">
-                          added to net amount
+                          deducted from total
                         </span>
                       </th>
                       <th className="py-3 px-4 text-center">Action</th>
@@ -231,7 +231,7 @@ export default function BuyerSearch() {
                     {groupedBuyers.map((r, i) => {
                       const editVal   = getHamaliEdit(r.buyer_name)
                       const hamaliAmt = parseFloat(editVal) || 0
-                      const netAmt    = r.total_amount + hamaliAmt   // gross + hamali = net
+                      const netAmt    = r.total_amount - hamaliAmt   // gross - hamali = net payable
                       const isSaving  = hamaliSaving[r.buyer_name] ?? false
                       const isSaved   = hamaliSaved[r.buyer_name]  ?? false
 
@@ -251,13 +251,13 @@ export default function BuyerSearch() {
                           <td className="py-3 px-4 text-right font-medium text-green-700 tabular-nums">
                             {formatCurrency(r.total_amount)}
                           </td>
-                          {/* Net Amount = gross + hamali */}
+                          {/* Net Amount = gross - hamali */}
                           <td className="py-3 px-4 text-right tabular-nums">
                             {hamaliAmt > 0 ? (
                               <div>
-                                <div className="font-bold text-blue-700">{formatCurrency(netAmt)}</div>
+                                <div className="font-bold text-orange-600">{formatCurrency(netAmt)}</div>
                                 <div className="text-[10px] text-gray-400 mt-0.5">
-                                  {formatCurrency(r.total_amount)} + {formatCurrency(hamaliAmt)}
+                                  {formatCurrency(r.total_amount)} − {formatCurrency(hamaliAmt)}
                                 </div>
                               </div>
                             ) : (
