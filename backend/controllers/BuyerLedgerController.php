@@ -431,8 +431,19 @@ function handleBuyerHamali(string $method, array $query): void {
             $billsStmt->execute([$buyerName]);
             $billIds = $billsStmt->fetchAll(PDO::FETCH_COLUMN);
 
-            foreach ($billIds as $billId) {
-                syncBuyerLedgerFromBill($db, (int)$billId, 'update');
+            // Get distinct dates for this buyer, recalc each day total
+            $dateStmt = $db->prepare("
+                SELECT DISTINCT b.date
+                FROM bills b
+                INNER JOIN bill_items bi ON bi.bill_id = b.id
+                WHERE bi.buyer_name COLLATE utf8mb4_unicode_ci = ?
+                ORDER BY b.date ASC
+            ");
+            $dateStmt->execute([$buyerName]);
+            $dates = $dateStmt->fetchAll(PDO::FETCH_COLUMN);
+
+            foreach ($dates as $date) {
+                recalcBuyerDayTotal($db, $buyerName, $date);
             }
 
             $db->commit();
@@ -442,9 +453,9 @@ function handleBuyerHamali(string $method, array $query): void {
         }
 
         echo json_encode([
-            'buyer_name'   => $buyerName,
-            'hamali'       => $hamali,
-            'bills_synced' => count($billIds ?? []),
+            'buyer_name'    => $buyerName,
+            'hamali'        => $hamali,
+            'dates_synced'  => count($dates ?? []),
         ]);
         return;
     }
@@ -456,79 +467,128 @@ function handleBuyerHamali(string $method, array $query): void {
 // ============================================================
 // CALLED FROM BillController on CREATE / UPDATE / DELETE
 //
-// Patti → Buyer Ledger Debit formula:
-//   gross        = bags × rate   (per buyer item, summed)
-//   hamali       = buyer_hamali.hamali for this buyer (flat, from BuyerSearch page)
-//   if hamali > 0:  final = gross - hamali
-//   if hamali = 0:  final = gross  (direct, no deduction)
-//   → buyer_ledger debit = final
+// ONE ledger entry per buyer per date (not per bill).
+// Formula matches Buyer Search net amount exactly:
+//   total_gross = SUM(bags x rate) for this buyer across ALL bills on that date
+//   final       = (total_gross x 0.97) + hamali
+//
+// When any bill is created/edited/deleted, we recalculate the
+// day total for each buyer in that bill so ledger always matches
+// the Buyer Search net amount.
 // ============================================================
 
 function syncBuyerLedgerFromBill(PDO $db, int $billId, string $action): void {
-    if ($action === 'delete') {
-        $db->prepare("DELETE FROM buyer_ledger WHERE ref_type='patti' AND ref_id=?")->execute([$billId]);
-        return;
-    }
-
     $billStmt = $db->prepare('SELECT * FROM bills WHERE id = ?');
     $billStmt->execute([$billId]);
     $bill = $billStmt->fetch(PDO::FETCH_ASSOC);
-    if (!$bill) return;
 
-    $itemStmt = $db->prepare('SELECT * FROM bill_items WHERE bill_id = ?');
-    $itemStmt->execute([$billId]);
-    $items = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
+    if ($action === 'delete') {
+        if (!$bill) {
+            $db->prepare("DELETE FROM buyer_ledger WHERE ref_type='patti' AND ref_id=?")->execute([$billId]);
+            return;
+        }
+        // Find buyers in this bill before deleting
+        $itemStmt = $db->prepare('SELECT DISTINCT buyer_name FROM bill_items WHERE bill_id = ?');
+        $itemStmt->execute([$billId]);
+        $affectedBuyers = $itemStmt->fetchAll(PDO::FETCH_COLUMN);
 
-    // Remove old ledger entries for this bill
-    $db->prepare("DELETE FROM buyer_ledger WHERE ref_type='patti' AND ref_id=?")->execute([$billId]);
+        // Remove legacy per-bill entry if any
+        $db->prepare("DELETE FROM buyer_ledger WHERE ref_type='patti' AND ref_id=?")->execute([$billId]);
 
-    // Sum gross amount per buyer
-    $byBuyer = [];
-    foreach ($items as $item) {
-        $buyerName = trim($item['buyer_name']);
-        if ($buyerName === '') continue;
-        $gross = (float)$item['bags'] * (float)$item['rate'];
-        $byBuyer[$buyerName] = ($byBuyer[$buyerName] ?? 0.0) + $gross;
+        // Recalculate day total for affected buyers AFTER deletion happens upstream
+        // (BillController deletes bill after calling this, so we recalc now)
+        foreach ($affectedBuyers as $buyerName) {
+            $buyerName = trim($buyerName);
+            if ($buyerName === '') continue;
+            recalcBuyerDayTotal($db, $buyerName, $bill['date'], $billId);
+        }
+        return;
     }
 
-    if (empty($byBuyer)) return;
+    if (!$bill) return;
 
-    $description = 'Patti No ' . $bill['serial_number'];
+    $itemStmt = $db->prepare('SELECT DISTINCT buyer_name FROM bill_items WHERE bill_id = ?');
+    $itemStmt->execute([$billId]);
+    $affectedBuyers = $itemStmt->fetchAll(PDO::FETCH_COLUMN);
 
-    $insertStmt = $db->prepare('
-        INSERT INTO buyer_ledger (buyer_name, date, description, type, amount, ref_type, ref_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ');
+    // Remove legacy per-bill entry
+    $db->prepare("DELETE FROM buyer_ledger WHERE ref_type='patti' AND ref_id=?")->execute([$billId]);
 
-    // Hamali lookup from buyer_hamali table (set on BuyerSearch page)
+    foreach ($affectedBuyers as $buyerName) {
+        $buyerName = trim($buyerName);
+        if ($buyerName === '') continue;
+        recalcBuyerDayTotal($db, $buyerName, $bill['date']);
+    }
+}
+
+// ============================================================
+// Recalculate ONE ledger entry per buyer per date.
+// Sums ALL bills on that date for that buyer.
+// $excludeBillId: pass bill id being deleted so it's excluded.
+// ============================================================
+function recalcBuyerDayTotal(PDO $db, string $buyerName, string $date, int $excludeBillId = 0): void {
+    // Sum gross from all bill_items for this buyer on this date
+    $sql = "
+        SELECT COALESCE(SUM(bi.bags * bi.rate), 0) as total_gross
+        FROM bill_items bi
+        JOIN bills b ON b.id = bi.bill_id
+        WHERE bi.buyer_name COLLATE utf8mb4_unicode_ci = ?
+          AND b.date = ?
+    ";
+    $params = [$buyerName, $date];
+    if ($excludeBillId > 0) {
+        $sql    .= " AND b.id != ?";
+        $params[] = $excludeBillId;
+    }
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
+    $row        = $stmt->fetch(PDO::FETCH_ASSOC);
+    $totalGross = (float)($row['total_gross'] ?? 0);
+
+    // Stable unique ref_id for this buyer+date
+    $refId = abs(crc32($buyerName . '|' . $date));
+
+    // Remove old entry for this buyer+date
+    $db->prepare("
+        DELETE FROM buyer_ledger
+        WHERE ref_type = 'patti'
+          AND ref_id = ?
+          AND buyer_name COLLATE utf8mb4_unicode_ci = ?
+    ")->execute([$refId, $buyerName]);
+
+    if ($totalGross <= 0) return;
+
+    // Get flat hamali for this buyer
     $hamaliStmt = $db->prepare("
         SELECT COALESCE(hamali, 0) as hamali
         FROM buyer_hamali
         WHERE buyer_name COLLATE utf8mb4_unicode_ci = ?
     ");
+    $hamaliStmt->execute([$buyerName]);
+    $hamaliRow = $hamaliStmt->fetch(PDO::FETCH_ASSOC);
+    $hamali    = (float)($hamaliRow['hamali'] ?? 0);
 
-    foreach ($byBuyer as $buyerName => $gross) {
-        if ($gross <= 0) continue;
+    // Formula: (total_gross x 0.97) + hamali
+    $finalAmount = round(($totalGross * 0.97) + $hamali, 2);
 
-        // Get flat hamali for this buyer
-        $hamaliStmt->execute([$buyerName]);
-        $hamaliRow  = $hamaliStmt->fetch(PDO::FETCH_ASSOC);
-        $hamali     = (float)($hamaliRow['hamali'] ?? 0);
+    if ($finalAmount <= 0) return;
 
-        // Formula: final = (gross x 0.97) + hamali
-        // 3% discount applied first, then hamali added
-        $finalAmount = round(($gross * 0.97) + $hamali, 2);
+    // Format date DD-MM-YYYY for description
+    $parts       = explode('-', $date);
+    $description = count($parts) === 3
+        ? $parts[2] . '-' . $parts[1] . '-' . $parts[0] . ' Total'
+        : $date . ' Total';
 
-        if ($finalAmount <= 0) continue;
-
-        $insertStmt->execute([
-            $buyerName,
-            $bill['date'],
-            $description,
-            'debit',
-            $finalAmount,
-            'patti',
-            $billId,
-        ]);
-    }
+    $db->prepare('
+        INSERT INTO buyer_ledger (buyer_name, date, description, type, amount, ref_type, ref_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ')->execute([
+        $buyerName,
+        $date,
+        $description,
+        'debit',
+        $finalAmount,
+        'patti',
+        $refId,
+    ]);
 }
