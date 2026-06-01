@@ -213,8 +213,7 @@ function handleBills(string $method, ?string $id, array $query): void {
     }
 
     if ($method === 'DELETE' && $id) {
-        // Remove buyer ledger debit entries first
-        syncBuyerLedgerFromBill($db, (int)$id, 'delete');
+        // Delete bill only — buyer_ledger and hamali are NOT touched on delete
         $db->prepare('DELETE FROM bills WHERE id = ?')->execute([$id]);
         echo json_encode(['success' => true]);
         return;
