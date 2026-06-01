@@ -478,22 +478,23 @@ function handleBuyerHamali(string $method, array $query): void {
 // ============================================================
 
 function syncBuyerLedgerFromBill(PDO $db, int $billId, string $action): void {
+    // DELETE: do NOT touch buyer_ledger at all.
+    // Buyer ledger entries must remain even when a bill is deleted.
+    if ($action === 'delete') return;
+
+    // CREATE / UPDATE only
     $billStmt = $db->prepare('SELECT * FROM bills WHERE id = ?');
     $billStmt->execute([$billId]);
     $bill = $billStmt->fetch(PDO::FETCH_ASSOC);
-
     if (!$bill) return;
 
-    // Get all buyers in this bill
     $itemStmt = $db->prepare('SELECT DISTINCT TRIM(buyer_name) as buyer_name FROM bill_items WHERE bill_id = ?');
     $itemStmt->execute([$billId]);
     $affectedBuyers = array_filter($itemStmt->fetchAll(PDO::FETCH_COLUMN));
 
     foreach ($affectedBuyers as $buyerName) {
         if (trim($buyerName) === '') continue;
-        // For delete: exclude this bill from the sum (it will be deleted after this call)
-        $excludeId = ($action === 'delete') ? $billId : 0;
-        recalcBuyerDayTotal($db, trim($buyerName), $bill['date'], $excludeId);
+        recalcBuyerDayTotal($db, trim($buyerName), $bill['date']);
     }
 }
 
@@ -502,7 +503,7 @@ function syncBuyerLedgerFromBill(PDO $db, int $billId, string $action): void {
 // Deletes by buyer_name + date (no ref_id ambiguity).
 // $excludeBillId: exclude this bill from sum (used on delete).
 // ============================================================
-function recalcBuyerDayTotal(PDO $db, string $buyerName, string $date, int $excludeBillId = 0): void {
+function recalcBuyerDayTotal(PDO $db, string $buyerName, string $date): void {
     // 1. Always delete existing entry for this buyer+date first
     $db->prepare("
         DELETE FROM buyer_ledger
@@ -511,25 +512,19 @@ function recalcBuyerDayTotal(PDO $db, string $buyerName, string $date, int $excl
           AND date = ?
     ")->execute([$buyerName, $date]);
 
-    // 2. Sum gross from all bills for this buyer on this date
-    $sql = "
+    // 2. Sum gross from ALL bills for this buyer on this date
+    $stmt = $db->prepare("
         SELECT COALESCE(SUM(bi.bags * bi.rate), 0) as total_gross
         FROM bill_items bi
         JOIN bills b ON b.id = bi.bill_id
         WHERE bi.buyer_name COLLATE utf8mb4_unicode_ci = ?
           AND b.date = ?
-    ";
-    $params = [$buyerName, $date];
-    if ($excludeBillId > 0) {
-        $sql     .= " AND b.id != ?";
-        $params[] = $excludeBillId;
-    }
-    $stmt = $db->prepare($sql);
-    $stmt->execute($params);
+    ");
+    $stmt->execute([$buyerName, $date]);
     $row        = $stmt->fetch(PDO::FETCH_ASSOC);
     $totalGross = (float)($row['total_gross'] ?? 0);
 
-    // 3. If no bills remain for this buyer on this date — stop (entry deleted above)
+    // 3. If no gross — stop (entry already deleted above)
     if ($totalGross <= 0) return;
 
     // 4. Get flat hamali for this buyer (0 if not set)
