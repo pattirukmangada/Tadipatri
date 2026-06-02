@@ -143,9 +143,20 @@ export default function BuyerSearch() {
   const detailsBags  = details.reduce((s, d) => s + Number(d.bags   || 0), 0)
 
   // ── PRINT ─────────────────────────────────────────────────────────────────
-  const handlePrint = (lang: PrintLang) => {
+  const handlePrint = async (lang: PrintLang) => {
     if (!selectedBuyer || details.length === 0) return
-    printBuyerThermal(selectedBuyer, details, { from, to }, lang)
+
+    // Get hamali for this buyer
+    const hamali = hamaliMap[selectedBuyer] ?? 0
+
+    // Get buyer ledger balance (outstanding amount)
+    let ledgerBalance = 0
+    try {
+      const ledger = await api.getBuyerLedger({ buyer: selectedBuyer })
+      ledgerBalance = ledger.balance ?? 0
+    } catch { ledgerBalance = 0 }
+
+    printBuyerThermal(selectedBuyer, details, { from, to }, lang, hamali, ledgerBalance)
   }
 
   return (

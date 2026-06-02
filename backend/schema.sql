@@ -167,6 +167,9 @@ UPDATE buyer_payments SET amount = credit_amount WHERE 1;
 -- Step 3: Verify it looks correct (optional check)
 SELECT id, buyer_name, date, entry_type, amount, credit_amount FROM buyer_payments LIMIT 10;
 
+-- Optional: remove old column after verifying data is correct
+ALTER TABLE buyer_payments DROP COLUMN credit_amount;
+
 
 <?php
 $password = "admin123";
@@ -176,3 +179,29 @@ $hash = password_hash($password, PASSWORD_BCRYPT);
 
 echo $hash;
 ?>
+
+
+DELETE bl1 FROM buyer_ledger bl1
+INNER JOIN buyer_ledger bl2
+ON bl1.buyer_name = bl2.buyer_name
+AND bl1.date = bl2.date
+AND bl1.ref_type = 'patti'
+AND bl2.ref_type = 'patti'
+AND bl1.id > bl2.id;
+
+
+CREATE TABLE IF NOT EXISTS buyer_hamali (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    buyer_name  VARCHAR(255)  NOT NULL,
+    hamali      DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    updated_at  TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_buyer (buyer_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS buyer_hamali (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    buyer_name VARCHAR(255)  NOT NULL,
+    hamali     DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    updated_at TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_buyer (buyer_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

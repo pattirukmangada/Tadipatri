@@ -82,11 +82,12 @@ export default function BuyerLedger() {
   const loadPayments = useCallback(() => {
     if (!buyer) { setPayments([]); return }
     setPaymentsLoading(true)
-    api.getBuyerPayments({ buyer, from, to })
+    // Load ALL payments for this buyer (no date filter) so Edit works from Ledger tab
+    api.getBuyerPayments({ buyer })
       .then(setPayments)
       .catch(() => setPayments([]))
       .finally(() => setPaymentsLoading(false))
-  }, [buyer, from, to])
+  }, [buyer])
 
   useEffect(() => { loadLedger(); loadPayments() }, [loadLedger, loadPayments])
 
@@ -413,6 +414,7 @@ export default function BuyerLedger() {
                     <th className="py-3 px-4 text-right">Debit</th>
                     <th className="py-3 px-4 text-right">Credit</th>
                     <th className="py-3 px-4 text-right">Balance</th>
+                    <th className="py-3 px-4 text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -448,6 +450,35 @@ export default function BuyerLedger() {
                           <span className="text-[10px] text-green-600 ml-1">CR</span>
                         )}
                       </td>
+                      {/* Actions — edit/delete only for manual payment entries */}
+                      <td className="py-3 px-4 text-center">
+                        {e.ref_type === 'payment' ? (
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => {
+                                const p = payments.find(p => p.id === e.ref_id)
+                                if (p) handleEdit(p)
+                              }}
+                              className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-500 transition-colors"
+                              title="Edit"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(e.ref_id)}
+                              disabled={deletingId === e.ref_id}
+                              className="p-1.5 rounded-lg hover:bg-red-50 text-red-500 transition-colors"
+                              title="Delete"
+                            >
+                              {deletingId === e.ref_id
+                                ? <Loader2 size={14} className="animate-spin" />
+                                : <Trash2 size={14} />}
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-gray-300 text-xs">—</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -460,6 +491,7 @@ export default function BuyerLedger() {
                       {formatCurrency(Math.abs(balance))}
                       {balance < 0 && <span className="text-xs ml-1 text-green-500">CR</span>}
                     </td>
+                    <td />
                   </tr>
                 </tfoot>
               </table>
