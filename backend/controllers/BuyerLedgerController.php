@@ -478,11 +478,10 @@ function handleBuyerHamali(string $method, array $query): void {
 // ============================================================
 
 function syncBuyerLedgerFromBill(PDO $db, int $billId, string $action): void {
-    // DELETE: do NOT touch buyer_ledger at all.
-    // Buyer ledger entries must remain even when a bill is deleted.
+    // DELETE is handled directly in BillController (after bill is gone).
+    // This function handles CREATE / UPDATE only.
     if ($action === 'delete') return;
 
-    // CREATE / UPDATE only
     $billStmt = $db->prepare('SELECT * FROM bills WHERE id = ?');
     $billStmt->execute([$billId]);
     $bill = $billStmt->fetch(PDO::FETCH_ASSOC);

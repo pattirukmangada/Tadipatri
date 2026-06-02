@@ -1,9 +1,10 @@
 // src/pages/admin/BuyerLedger.tsx
 import { useState, useEffect, useCallback } from 'react'
 import { api, BuyerLedgerEntry, BuyerPayment, formatCurrency } from '../../lib/api'
+import { exportBuyerLedgerPDF } from '../../lib/pdf-buyer-ledger'
 import {
   Loader2, Plus, Trash2, Edit2, Check, X,
-  TrendingDown, TrendingUp, Scale, ArrowDownCircle, ArrowUpCircle,
+  TrendingDown, TrendingUp, Scale, ArrowDownCircle, ArrowUpCircle, FileDown,
 } from 'lucide-react'
 
 function fmtDate(d?: string): string {
@@ -161,6 +162,21 @@ export default function BuyerLedger() {
 
   const handleCancel = () => { setShowForm(false); setEditingId(null) }
 
+  const handleExportPDF = async () => {
+    if (entries.length === 0) return alert('No entries to export')
+    await exportBuyerLedgerPDF(
+      entries.map(e => ({
+        date:            e.date,
+        description:     e.description,
+        type:            e.type,
+        amount:          e.amount,
+        ref_type:        e.ref_type,
+        running_balance: e.running_balance,
+      })),
+      { buyer, from, to, totalDebit, totalCredit, balance }
+    )
+  }
+
   // ── UI ────────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-5">
@@ -168,9 +184,18 @@ export default function BuyerLedger() {
       {/* HEADER */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-2xl font-bold">Buyer Ledger</h1>
-        <button onClick={handleAddNew} className="btn-primary flex items-center gap-2 text-sm">
-          <Plus size={16} /> Add Entry
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleExportPDF}
+            disabled={entries.length === 0}
+            className="btn-secondary flex items-center gap-2 text-sm"
+          >
+            <FileDown size={16} /> PDF
+          </button>
+          <button onClick={handleAddNew} className="btn-primary flex items-center gap-2 text-sm">
+            <Plus size={16} /> Add Entry
+          </button>
+        </div>
       </div>
 
       {/* FILTERS */}

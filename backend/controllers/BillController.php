@@ -213,8 +213,29 @@ function handleBills(string $method, ?string $id, array $query): void {
     }
 
     if ($method === 'DELETE' && $id) {
-        // Delete bill only — buyer_ledger and hamali are NOT touched on delete
+        // Get bill date and buyers BEFORE deleting
+        $billStmt = $db->prepare('SELECT date FROM bills WHERE id = ?');
+        $billStmt->execute([$id]);
+        $bill = $billStmt->fetch(PDO::FETCH_ASSOC);
+
+        $buyerStmt = $db->prepare('SELECT DISTINCT TRIM(buyer_name) as buyer_name FROM bill_items WHERE bill_id = ?');
+        $buyerStmt->execute([$id]);
+        $affectedBuyers = array_filter($buyerStmt->fetchAll(PDO::FETCH_COLUMN));
+
+        // Delete the bill (cascades to bill_items via FK or explicit delete)
+        $db->prepare('DELETE FROM bill_items WHERE bill_id = ?')->execute([$id]);
         $db->prepare('DELETE FROM bills WHERE id = ?')->execute([$id]);
+
+        // Recalc buyer ledger for each affected buyer on that date
+        // (now that bill is deleted, recalc will get correct remaining total)
+        if ($bill) {
+            foreach ($affectedBuyers as $buyerName) {
+                $buyerName = trim($buyerName);
+                if ($buyerName === '') continue;
+                recalcBuyerDayTotal($db, $buyerName, $bill['date']);
+            }
+        }
+
         echo json_encode(['success' => true]);
         return;
     }
